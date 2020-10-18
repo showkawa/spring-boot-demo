@@ -135,7 +135,7 @@ public @interface RateLimiter {
 @Aspect
 @Component
 public class RateLimiterAspect {
-    private static final com.google.common.util.concurrent.RateLimiter RATE_LIMITER = com.google.common.util.concurrent.RateLimiter.create(Double.MAX_VALUE);
+    private static final ConcurrentMap<String, com.google.common.util.concurrent.RateLimiter> RATE_LIMITER_CACHE = new ConcurrentHashMap<>();
 
     @Pointcut("@annotation(com.xkcoding.ratelimit.guava.annotation.RateLimiter)")
     public void rateLimit() {
@@ -150,11 +150,14 @@ public class RateLimiterAspect {
         RateLimiter rateLimiter = AnnotationUtils.findAnnotation(method, RateLimiter.class);
         if (rateLimiter != null && rateLimiter.qps() > RateLimiter.NOT_LIMITED) {
             double qps = rateLimiter.qps();
-            log.debug("【{}】的QPS设置为: {}", method.getName(), qps);
-            // 重新设置 QPS
-            RATE_LIMITER.setRate(qps);
+            if (RATE_LIMITER_CACHE.get(method.getName()) == null) {
+                // 初始化 QPS
+                RATE_LIMITER_CACHE.put(method.getName(), com.google.common.util.concurrent.RateLimiter.create(qps));
+            }
+
+            log.debug("【{}】的QPS设置为: {}", method.getName(), RATE_LIMITER_CACHE.get(method.getName()).getRate());
             // 尝试获取令牌
-            if (!RATE_LIMITER.tryAcquire(rateLimiter.timeout(), rateLimiter.timeUnit())) {
+            if (RATE_LIMITER_CACHE.get(method.getName()) != null && !RATE_LIMITER_CACHE.get(method.getName()).tryAcquire(rateLimiter.timeout(), rateLimiter.timeUnit())) {
                 throw new RuntimeException("手速太快了，慢点儿吧~");
             }
         }
@@ -197,15 +200,15 @@ public class TestController {
 
 - test1 接口未被限流的时候
 
-<img src="assets/image-20190912155209716.png" alt="image-20190912155209716" style="zoom:50%;" />
+<img src="http://static.xkcoding.com/spring-boot-demo/ratelimit/guava/063719.jpg" alt="image-20190912155209716" style="zoom:50%;" />
 
 - test1 接口频繁刷新，触发限流的时候
 
-<img src="assets/image-20190912155229745.png" alt="image-20190912155229745" style="zoom:50%;" />
+<img src="http://static.xkcoding.com/spring-boot-demo/ratelimit/guava/063718-1.jpg" alt="image-20190912155229745" style="zoom:50%;" />
 
 - test2 接口不做限流，可以一直刷新
 
-<img src="assets/image-20190912155146012.png" alt="image-20190912155146012" style="zoom:50%;" />
+<img src="http://static.xkcoding.com/spring-boot-demo/ratelimit/guava/063718.jpg" alt="image-20190912155146012" style="zoom:50%;" />
 
 ## 3. 参考
 
